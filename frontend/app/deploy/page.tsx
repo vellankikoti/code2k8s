@@ -2,6 +2,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { TemplateBootstrap } from "@/lib/catalog";
+import { EnvEditor, type EnvEntry } from "@/components/EnvEditor";
 
 function DeployForm() {
   const router = useRouter();
@@ -19,6 +20,8 @@ function DeployForm() {
     if (raw) bootstrap = JSON.parse(decodeURIComponent(raw)) as TemplateBootstrap;
   } catch {}
   const [attachPg, setAttachPg] = useState(bootstrap?.postgres ?? false);
+  const templateEnv = (bootstrap?.extraEnv ?? []) as EnvEntry[];
+  const [userEnv, setUserEnv] = useState<EnvEntry[]>([]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,7 +33,7 @@ function DeployForm() {
         branch,
         port: port.trim() === "" ? 0 : Number(port),
         bootstrapPostgres: attachPg,
-        extraEnv: bootstrap?.extraEnv ?? [],
+        extraEnv: [...templateEnv, ...userEnv],
       };
       if (slug) payload.slug = slug;
       const res = await fetch("/api/deployments", {
@@ -84,6 +87,19 @@ function DeployForm() {
             <label>Slug (optional)</label>
             <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="auto" />
           </div>
+        </div>
+        <div style={{ margin: "0.5rem 0 1rem" }}>
+          <label>Environment variables <span style={{ color: "var(--muted)", fontWeight: 400 }}>— optional</span></label>
+          <EnvEditor
+            value={[...templateEnv, ...userEnv]}
+            onChange={(next) => {
+              // Keep template-owned rows immutable; capture only user additions.
+              const templateNames = new Set(templateEnv.map((e) => e.name));
+              setUserEnv(next.filter((e) => !templateNames.has(e.name) && "value" in e));
+            }}
+            locked={templateEnv.map((e) => e.name)}
+            lockedLabel="template"
+          />
         </div>
         {error && <pre style={{ color: "#ff8a8a", whiteSpace: "pre-wrap", fontSize: "0.8rem" }}>{error}</pre>}
         <button disabled={loading}>{loading ? "Submitting…" : "Deploy"}</button>

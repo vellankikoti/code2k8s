@@ -1,12 +1,14 @@
 "use client";
 import { useEffect, useRef, useState, use } from "react";
 import { useRouter } from "next/navigation";
+import { EnvEditor, type EnvEntry } from "@/components/EnvEditor";
 
 interface Dep {
   id: string; slug: string; repo_url: string; branch: string; port: number;
   status: string; url: string | null; error: string | null;
   min_replicas: number; max_replicas: number;
   deleted_at: string | null;
+  extra_env: EnvEntry[];
 }
 
 interface Database {
@@ -157,6 +159,57 @@ function DatabasesPanel({ deploymentId, dbs, disabled }: { deploymentId: string;
   );
 }
 
+function EnvSection({ dep, disabled }: { dep: Dep; disabled: boolean }) {
+  const [env, setEnv] = useState<EnvEntry[]>(dep.extra_env ?? []);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  // If upstream changes (e.g., DB attach added rows), reset — unless user has unsaved edits.
+  useEffect(() => {
+    if (!dirty) setEnv(dep.extra_env ?? []);
+  }, [dep.extra_env, dirty]);
+
+  async function save() {
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch(`/api/deployments/${dep.id}/env`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ env }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
+      setMsg("Saved ✓ (rolling restart in progress)");
+      setDirty(false);
+    } catch (err) {
+      setMsg(`Save failed: ${(err as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <hr style={{ border: 0, borderTop: "1px solid var(--border)", margin: "1.25rem 0" }} />
+      <div>
+        <h4 style={{ margin: "0 0 0.5rem" }}>Environment variables</h4>
+        <EnvEditor
+          value={env}
+          onChange={(next) => { setEnv(next); setDirty(true); }}
+          locked={env.filter((e) => "fromDatabase" in e).map((e) => e.name)}
+          lockedLabel="db"
+        />
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem", alignItems: "center" }}>
+          <button className="btn ghost" disabled={disabled || busy || !dirty} onClick={save}>
+            {busy ? "Saving…" : "Save & restart"}
+          </button>
+          {msg && <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{msg}</span>}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function dbStatusClass(s: string) {
   return ({ ready: "live", failed: "failed", deleted: "deleting" } as Record<string, string>)[s] ?? "building";
 }
@@ -216,6 +269,9 @@ function ManagePanel({ dep, disabled, onDeleted }: { dep: Dep; disabled: boolean
           Rolling restart
         </button>
       </div>
+
+      <EnvSection dep={dep} disabled={disabled} />
+
 
       <hr style={{ border: 0, borderTop: "1px solid var(--border)", margin: "1.25rem 0" }} />
 

@@ -101,6 +101,27 @@ deployments.post("/:id/scale", async (req, res) => {
   }
 });
 
+deployments.put("/:id/env", async (req, res) => {
+  const parsed = z.object({ env: z.array(EnvSpecSchema).max(40) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const d = await loadDeployment(req.params.id);
+  if (!d) return res.status(404).json({ error: "not found" });
+  if (d.deleted_at) return res.status(400).json({ error: "deployment is deleted" });
+  await db.query(
+    "UPDATE deployments SET extra_env = $2::jsonb, updated_at = now() WHERE id = $1",
+    [d.id, JSON.stringify(parsed.data.env)],
+  );
+  let reconcileError: string | null = null;
+  if (d.status === "live") {
+    const fresh = await loadDeployment(d.id);
+    if (fresh) {
+      try { await reconcileLiveDeployment(fresh); }
+      catch (err) { reconcileError = (err as Error).message; }
+    }
+  }
+  res.json({ ok: true, env: parsed.data.env, ...(reconcileError ? { reconcileError } : {}) });
+});
+
 deployments.post("/:id/restart", async (req, res) => {
   const d = await loadDeployment(req.params.id);
   if (!d) return res.status(404).json({ error: "not found" });
@@ -148,7 +169,9 @@ deployments.delete("/:id/databases/:dbId", async (req, res) => {
     await detachDatabase(d, req.params.dbId);
     // Post-detach: reconcile so the env var disappears from the pod template.
     const fresh = await loadDeployment(d.id);
-    if (fresh) await reconcileLiveDeployment(fresh);
+    if (fresh) {
+      try { await reconcileLiveDeployment(fresh); } catch { /* stale row — already logged */ }
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });

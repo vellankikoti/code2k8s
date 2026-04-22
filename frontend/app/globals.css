@@ -136,5 +136,14 @@ th { color:var(--muted); font-weight: 500; }
 .manage-row { display:grid; grid-template-columns: auto 90px auto 90px auto; gap: 0.5rem; align-items: center; }
 .manage-row label { font-size: 0.85rem; color: var(--muted); }
 .manage-row input { padding: 0.45rem 0.6rem; background: #0b0b10; color: var(--fg); border:1px solid var(--border); border-radius: 6px; font: inherit; }
+
+.env-editor { display:flex; flex-direction: column; gap: 0.35rem; }
+.env-list, .env-row { display:flex; flex-direction: column; gap: 0.35rem; }
+.env-row { flex-direction: row; align-items: center; gap: 0.5rem; }
+.env-row.new { margin-top: 0.25rem; }
+.env-name { width: 180px; padding: 0.45rem 0.65rem; background: #0b0b10; color: var(--fg); border:1px solid var(--border); border-radius: 6px; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+.env-value { flex: 1; padding: 0.45rem 0.65rem; background: #0b0b10; color: var(--fg); border:1px solid var(--border); border-radius: 6px; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+.env-name:disabled, .env-value:disabled { opacity: 0.65; }
+.env-hint { color: var(--muted); font-size: 0.78rem; margin-top: 0.25rem; }
 code { background: #0f0f13; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.88em; }
 a { color: var(--accent-2); }

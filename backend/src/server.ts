@@ -13,6 +13,13 @@ app.use(pinoHttp({ logger }));
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 app.use("/api/deployments", deployments);
 
+process.on("unhandledRejection", (reason) => {
+  logger.error({ reason }, "unhandled promise rejection — keeping process alive");
+});
+process.on("uncaughtException", (err) => {
+  logger.error({ err }, "uncaught exception — keeping process alive");
+});
+
 async function main() {
   await migrate();
   startWorker();

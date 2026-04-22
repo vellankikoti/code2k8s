@@ -289,11 +289,25 @@ async function waitForDatabaseReady(depId: string, envVar: string, _logId: strin
 }
 
 /**
- * Re-apply the live Deployment manifest with current `envFrom` secrets.
- * Used when a database is attached/detached after the app is already live —
- * the change in envFrom triggers a rolling restart automatically.
+ * Re-apply the live Deployment manifest with current `envFrom` secrets + env.
+ * Used when a database is attached/detached or env changes after the app is live —
+ * the change in pod template triggers a rolling restart automatically.
+ * No-ops for non-live deployments and tolerates orphaned rows (namespace gone).
  */
 export async function reconcileLiveDeployment(d: Deployment) {
   if (d.status !== "live" || !d.image || !d.port) return;
-  await applyDeployment(d.slug, d.image, d.port, true, d.min_replicas, d.id);
+  try {
+    await applyDeployment(d.slug, d.image, d.port, true, d.min_replicas, d.id);
+  } catch (err) {
+    const status = (err as { statusCode?: number }).statusCode;
+    if (status === 404) {
+      await db.query(
+        "UPDATE deployments SET status='failed', error='namespace no longer exists', updated_at=now() WHERE id=$1",
+        [d.id],
+      );
+      await event(d.id, "Reconcile skipped — namespace no longer exists; marked failed.", "warn");
+      return;
+    }
+    throw err;
+  }
 }
