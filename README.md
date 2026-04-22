@@ -5,6 +5,7 @@
 - **Try it free in the browser** (no install, no card): [killercoda instructions →](docs/platforms.md#start-free-in-the-browser-killercoda)
 - **Run it on 3× $5 VPS**: [bare-metal walkthrough →](docs/bare-metal-k3s-guide.md)
 - **Any other cluster**: [platform overlay matrix →](docs/platforms.md)
+- **Poke the running cluster** (autoscale, self-heal, rolling-update demos): [live playground →](docs/playground.md)
 
 ---
 
