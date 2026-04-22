@@ -1,98 +1,98 @@
-# Code2K8s
+# Deploy Next.js + Postgres + Redis to bare-metal Kubernetes for $15/month
 
-> **👉 Looking for the hands-on bare-metal k3s guide?** Start here: [`docs/bare-metal-k3s-guide.md`](docs/bare-metal-k3s-guide.md). A complete walkthrough for deploying Next.js + Postgres + Redis on three $5 VPS nodes with HTTPS, persistence, and zero-downtime deploys — using only public upstream projects (k3s, ingress-nginx, cert-manager, local-path).
+> A hands-on guide to standing up a real 3-node **k3s** cluster on cheap VPS hardware — with HTTPS, persistent storage, and zero-downtime deploys. Nothing invented; every component is a stock install of a public project.
 
-
-> **Your own Vercel — on your own Kubernetes.**
-> Paste a GitHub repo. Click Deploy. Get a live URL.
-> No YAML. No Helm. No lock-in. Just production-shaped Kubernetes, one click away.
-
-Code2K8s turns the vague ambition of *"I should learn Kubernetes"* into a tight, repeatable loop: pick a template, ship it, see it live, read the manifests we generated, steal them.
+**Read the guide →** [`docs/bare-metal-k3s-guide.md`](docs/bare-metal-k3s-guide.md)
 
 ---
 
-## Who it's for
+## What you'll build
 
-- **First-time Kubernetes users** who want to reach production-grade defaults before they reach the second page of a Helm tutorial.
-- **Platform teams** who need a tiny internal PaaS they can *audit line by line* rather than import as a black box.
-- **Instructors** teaching "how does a PaaS actually work" — the whole stack is ~1500 lines.
+```
+       Internet
+           │  (DNS: *.apps.example.com → node-1)
+           ▼
+  ┌────────────────────────────────────────────────────┐
+  │  node-1 (control-plane)                            │   Hetzner CX22  ~€4.50
+  │  node-2, node-3 (workers)                          │   each — $15 total
+  │                                                    │
+  │  k3s  ·  ingress-nginx  ·  cert-manager            │
+  │  local-path-provisioner (bundled)                  │
+  │                                                    │
+  │  namespace "app":                                  │
+  │    Deployment   web (Next.js, 2 replicas)          │
+  │    StatefulSet  postgres (10 Gi PVC)               │
+  │    StatefulSet  redis     (2 Gi PVC)               │
+  │    Ingress      app.apps.example.com + TLS         │
+  └────────────────────────────────────────────────────┘
+```
 
-## Why it exists
+## Why bother
 
-Everyone wants to deploy to Kubernetes. Almost nobody agrees on *how*. Raw YAML rots. Helm values hide complexity behind more complexity. Full PaaS products hide Kubernetes entirely — you learn the product, not the platform. Code2K8s picks the narrow middle path: **standard Kubernetes primitives only**, transparent defaults, zero CRDs.
+- **$15/month** total — three $5 VPS nodes (Hetzner / DigitalOcean / Contabo / Linode).
+- **Real HTTPS.** Automatic cert renewal via cert-manager + Let's Encrypt. No reverse-proxy config to hand-edit.
+- **Real persistence.** Postgres data survives pod and node restarts.
+- **Zero-downtime rolling deploys.** `maxUnavailable: 0` + readiness probes = no dropped requests when you ship.
+- **No cloud lock-in.** Works identically on any provider that gives you an SSH-able Linux box.
+- **Learn the primitives.** You end up with manifests you could commit and maintain by hand — not a black-box PaaS.
 
-When you outgrow it, you don't migrate off — you just take the manifests it rendered and keep going.
+## Stack
 
-## What's in the box
+| Layer | Project | Why |
+|---|---|---|
+| Cluster | [k3s](https://k3s.io) | Single 100 MB binary. SQLite datastore. Fits 2 GB RAM. |
+| Storage | [local-path-provisioner](https://github.com/rancher/local-path-provisioner) | Bundled. Directory-on-disk PVCs. No cloud bill. |
+| Ingress | [ingress-nginx](https://kubernetes.github.io/ingress-nginx/) | Widest ecosystem support — every Helm chart assumes it. |
+| TLS | [cert-manager](https://cert-manager.io) + Let's Encrypt | Fire-and-forget HTTPS via HTTP-01. |
 
-- **Landing + template catalog** — 25 validated open-source apps (every Dockerfile is probed before it ships in the catalog; `scripts/validate-catalog.sh` re-checks on demand).
-- **One-click deploy** — template pages pre-fill the form; one click kicks off a real in-cluster Kaniko build + rollout.
-- **Live log streaming** — SSE from the API, not polling.
-- **Dashboard** — list, status, live URL, rolling history.
-- **Local k3d cluster** in one script (`scripts/cluster-up.sh`).
-- **Production manifests** you'd commit to git — Deployment + Service + Ingress + HPA, with probes, resource limits, and rolling updates wired up.
-
-## 60-second start
+## Quickstart
 
 ```bash
-docker compose up -d                       # Postgres + Redis
-bash scripts/cluster-up.sh                 # k3d cluster on :18080
-cd backend  && npm install && npm run dev  # API on :8080
-cd frontend && npm install && npm run dev  # UI on :3000
-open http://localhost:3000/templates
+# 1. On node 1 (control plane)
+bash infra/scripts/01-install-k3s-server.sh
+
+# 2. On workers — paste the token from step 1
+K3S_URL=https://<NODE1_IP>:6443 K3S_TOKEN=<token> \
+  bash infra/scripts/02-install-k3s-agent.sh
+
+# 3. Pull the kubeconfig to your laptop
+scp root@<NODE1_IP>:/etc/rancher/k3s/k3s.yaml ~/.kube/code2k8s.yaml
+sed -i '' "s/127.0.0.1/<NODE1_IP>/" ~/.kube/code2k8s.yaml
+export KUBECONFIG=~/.kube/code2k8s.yaml
+
+# 4. Install ingress + TLS
+bash infra/scripts/03-install-ingress-nginx.sh
+ACME_EMAIL=you@example.com bash infra/scripts/04-install-cert-manager.sh
+
+# 5. Deploy the demo stack (edit 3 CHANGE-ME placeholders first)
+kubectl apply -f infra/cluster/app-stack.yaml
 ```
 
-Click any template → Deploy → watch the log stream → open the URL.
+See the [full guide](docs/bare-metal-k3s-guide.md) for the explanation behind each line.
 
-## Architecture
+## Repo layout
 
 ```
-Next.js UI  →  Express API  →  BullMQ (Redis)  →  Worker
-                                                     │
-                                         ┌───────────┴───────────┐
-                                         ▼                       ▼
-                              Kaniko Job (in-cluster       Deployment+Service
-                               build, pushes to OCI         +Ingress+HPA in
-                               registry)                    namespace app-<slug>
+docs/bare-metal-k3s-guide.md    ← the walkthrough (start here)
+infra/scripts/                  ← 4 bootstrap scripts, one per layer
+infra/cluster/app-stack.yaml    ← complete Next.js + Postgres + Redis manifest
+infra/README.md                 ← "why this project, not that one" per layer
+backend/  frontend/  k8s/       ← a reference PaaS built on the same primitives
+                                  (optional — the guide doesn't require it)
 ```
 
-- **Transparent**: we talk to the Kubernetes API directly — no operators, no CRDs, no controllers of our own.
-- **Portable**: all cluster-shape things (domain, storage class, TLS issuer, registry) live in one ConfigMap — flip it and the same code runs on k3s / EKS / GKE / AKS.
-- **Idempotent**: every apply is create-or-replace keyed by name, so restarting the worker during a deploy is safe.
+## FAQ
 
-## Ship modes
+**Do I need three nodes?** No — one works for the whole guide. Three makes the ingress / worker separation realistic and gives you a node to lose without everything going dark.
 
-| Where | What it takes |
-|---|---|
-| **Local** | `docker compose up` + `k3d` cluster. Ingress on `127.0.0.1.nip.io:18080`. |
-| **k3s on bare metal** | Traefik ships with k3s. Point a wildcard A record at your node IP. |
-| **EKS / GKE / AKS** | Install nginx-ingress (or the cloud's). Set `STORAGE_CLASS`, `BASE_DOMAIN`, `CERT_ISSUER` in the ConfigMap. No code changes. |
+**Why not managed Kubernetes (EKS / GKE / AKS)?** You can. The manifests in `infra/cluster/` run unchanged. This guide is specifically for people who want to see the whole stack end-to-end on hardware they can SSH into.
 
-## Design principles
+**Does this work on Raspberry Pi / homelab?** Yes. k3s runs on `arm64` and `armv7`. Swap the images accordingly and everything else is the same.
 
-1. **Only standard Kubernetes APIs.** If it needs a CRD, we don't ship it in v1.
-2. **Every generated manifest is one you'd be proud to commit.** No magic annotations, no `managed-by` cruft beyond a label.
-3. **The platform runs on the primitives it generates.** Same rolling-update rules. Same probes. Same autoscaler.
-4. **Production defaults from minute one.** `maxUnavailable=0`. Readiness probes. Resource requests. HPA on CPU.
-5. **Beginner-explainable.** If a Staff engineer can't walk a junior through a file in 10 minutes, it's too clever.
+**Why k3s over full Kubernetes?** Full control-plane pods eat ~1 GB of RAM before anything of yours runs. k3s with SQLite does the same job in ~250 MB. Upgrade when you outgrow it; the YAML is identical.
 
-## Roadmap
+**Can I use my existing domain?** Yes — set the wildcard A record and edit the two `CHANGE-ME` host names in `infra/cluster/app-stack.yaml`.
 
-- **Attach-a-database** — one-click Postgres / Redis via platform-managed StatefulSets, wired into the app's env.
-- **Env var editor + secret store.**
-- **Private repo auth** (GitHub App).
-- **Preview deploys per branch**, GC'd after N days of inactivity.
-- **Delete + scale actions from the dashboard.**
-- **Real metrics panel** (pod CPU/memory from metrics-server).
+## License
 
-## Contributing templates
-
-PRs adding entries to `frontend/lib/catalog.json` are welcome. Rules:
-
-1. Dockerfile at the **root** of the default branch.
-2. App listens on the documented `port`.
-3. Run `bash scripts/validate-catalog.sh` before pushing — CI will reject missing Dockerfiles.
-
----
-
-**Your first Kubernetes deploy is one click away.** — open `/templates` and pick one.
+MIT. See the guide for what's deliberately out of scope (HA Postgres, monitoring, CI/CD, backups) — each of those is its own rabbit hole.
