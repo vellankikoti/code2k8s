@@ -48,13 +48,27 @@ detect_overlay() {
     azure:///*) echo aks; return ;;
   esac
 
-  # Node labels — k3s (bare-metal / killercoda) vs other self-managed.
-  nodes="$(kubectl get nodes -o json 2>/dev/null || true)"
-  if echo "$nodes" | grep -q '"node.kubernetes.io/instance-type":[[:space:]]*"k3s"'; then
-    # killercoda's k3s playground has a recognizable hostname pattern.
-    if echo "$nodes" | grep -qE '"kubernetes.io/hostname":[[:space:]]*"(controlplane|node01|node-1)"'; then
-      echo killercoda; return
-    fi
+  # Self-managed clusters (no cloud providerID). Distinguish killercoda
+  # playgrounds from real bare-metal by hostname pattern.
+  local hostnames is_k3s
+  hostnames="$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)"
+  is_k3s=0
+  if kubectl get nodes -o json 2>/dev/null \
+       | grep -q '"node.kubernetes.io/instance-type":[[:space:]]*"k3s"'; then
+    is_k3s=1
+  fi
+
+  # Killercoda hostnames: `controlplane` + `node01..` (k8s playground) or
+  # `cplane-01` + `node-01..` (newer kubeadm playground). Match either.
+  if echo "$hostnames" | grep -qE '(^|[[:space:]])(controlplane|cplane-[0-9]+)([[:space:]]|$)' \
+     && echo "$hostnames" | grep -qE '(^|[[:space:]])node-?[0-9]+([[:space:]]|$)'; then
+    echo killercoda; return
+  fi
+
+  [ "$is_k3s" -eq 1 ] && { echo bare-metal; return; }
+
+  # Kubeadm default context with no providerID → self-managed; assume bare-metal.
+  if [ "$ctx" = "kubernetes-admin@kubernetes" ]; then
     echo bare-metal; return
   fi
 
