@@ -1,9 +1,6 @@
-# Complete Next.js + Postgres + Redis stack for a bare-metal k3s cluster.
-# Edit the three "CHANGE-ME" placeholders, then: kubectl apply -f app-stack.yaml
-#
-# Prereqs: k3s cluster running, ingress-nginx installed, cert-manager ClusterIssuer
-# 'letsencrypt-prod' exists, DNS for your hostname points at the cluster.
-
+# Local smoke-test variant of app-stack.yaml — targets k3d with Traefik,
+# no TLS, and nip.io hostname. The file at infra/cluster/app-stack.yaml
+# stays the production/bare-metal version.
 apiVersion: v1
 kind: Namespace
 metadata: { name: app }
@@ -13,7 +10,7 @@ kind: Secret
 metadata: { name: postgres, namespace: app }
 stringData:
   POSTGRES_USER: app
-  POSTGRES_PASSWORD: CHANGE-ME-postgres-password
+  POSTGRES_PASSWORD: local-smoke-test-pw
   POSTGRES_DB: app
 ---
 apiVersion: v1
@@ -41,13 +38,8 @@ spec:
           ports: [{ containerPort: 5432 }]
           volumeMounts:
             - { name: data, mountPath: /var/lib/postgresql/data, subPath: pgdata }
-          readinessProbe:
-            exec: { command: [pg_isready, -U, app, -d, app] }
-            periodSeconds: 3
-          livenessProbe:
-            exec: { command: [pg_isready, -U, app, -d, app] }
-            periodSeconds: 20
-            initialDelaySeconds: 30
+          readinessProbe: { exec: { command: [pg_isready, -U, app, -d, app] }, periodSeconds: 3 }
+          livenessProbe:  { exec: { command: [pg_isready, -U, app, -d, app] }, periodSeconds: 20, initialDelaySeconds: 30 }
           resources:
             requests: { cpu: 100m, memory: 128Mi }
             limits:   { cpu: 1000m, memory: 512Mi }
@@ -55,7 +47,7 @@ spec:
     - metadata: { name: data }
       spec:
         accessModes: [ReadWriteOnce]
-        resources: { requests: { storage: 10Gi } }
+        resources: { requests: { storage: 2Gi } }
 ---
 apiVersion: v1
 kind: Service
@@ -80,9 +72,7 @@ spec:
           image: redis:7-alpine
           args: [--save, "", --appendonly, "no"]
           ports: [{ containerPort: 6379 }]
-          readinessProbe:
-            exec: { command: [redis-cli, ping] }
-            periodSeconds: 3
+          readinessProbe: { exec: { command: [redis-cli, ping] }, periodSeconds: 3 }
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits:   { cpu: 300m, memory: 256Mi }
@@ -90,7 +80,7 @@ spec:
     - metadata: { name: data }
       spec:
         accessModes: [ReadWriteOnce]
-        resources: { requests: { storage: 2Gi } }
+        resources: { requests: { storage: 1Gi } }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -107,22 +97,17 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: web
-          # Published automatically by .github/workflows/publish-demo.yml
-          # Swap for your own image if you forked this repo.
           image: ghcr.io/vellankikoti/next-postgres-redis:latest
           ports: [{ containerPort: 3000 }]
-          # preStop sleep gives the ingress controller time to remove this pod
-          # from the Service endpoints before SIGTERM arrives — the difference
-          # between 99.8% and 100% successful requests during rolling restarts.
           lifecycle:
             preStop: { exec: { command: ["sh", "-c", "sleep 20"] } }
           env:
             - name: DATABASE_URL
-              value: postgres://app:CHANGE-ME-postgres-password@postgres.app.svc.cluster.local:5432/app
+              value: postgres://app:local-smoke-test-pw@postgres.app.svc.cluster.local:5432/app
             - name: REDIS_URL
               value: redis://redis.app.svc.cluster.local:6379
-          readinessProbe: { httpGet: { path: /, port: 3000 }, periodSeconds: 3, failureThreshold: 6 }
-          livenessProbe:  { httpGet: { path: /, port: 3000 }, periodSeconds: 20, initialDelaySeconds: 30 }
+          readinessProbe: { httpGet: { path: /, port: 3000 }, periodSeconds: 3, failureThreshold: 8 }
+          livenessProbe:  { httpGet: { path: /, port: 3000 }, periodSeconds: 20, initialDelaySeconds: 60 }
           resources:
             requests: { cpu: 100m, memory: 128Mi }
             limits:   { cpu: 1000m, memory: 512Mi }
@@ -136,18 +121,11 @@ spec:
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
-metadata:
-  name: web
-  namespace: app
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+metadata: { name: web, namespace: app }
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   rules:
-    - host: app.apps.example.com       # CHANGE-ME
+    - host: web.127.0.0.1.nip.io
       http:
         paths:
           - { path: /, pathType: Prefix, backend: { service: { name: web, port: { number: 80 } } } }
-  tls:
-    - hosts: [app.apps.example.com]    # CHANGE-ME
-      secretName: web-tls
