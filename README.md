@@ -66,7 +66,74 @@ When the script finishes you'll see a **"What to do next"** block with the exact
 
 If the rollout times out, the script prints a diagnostic snapshot (pods, PVCs, recent events, `describe` of the first web pod) and the two most common fixes — usually a Pending PVC (no default StorageClass) or a still-pulling image. Re-run the script once Postgres is Running.
 
-See [`docs/platforms.md`](docs/platforms.md) for the per-platform prereqs (ingress controller, cert-manager, storage class). The base manifests in `infra/base/` are cluster-neutral — only the overlays touch platform-specific fields. Once it's up, the four demo scenarios (autoscaling, self-healing, cache vs DB, rolling update) are in [`docs/playground.md`](docs/playground.md).
+See [`docs/platforms.md`](docs/platforms.md) for the per-platform prereqs (ingress controller, cert-manager, storage class). The base manifests in `infra/base/` are cluster-neutral — only the overlays touch platform-specific fields.
+
+## Try it — what to test and how
+
+Once the dashboard is open (two counters, three buttons, current pod name at the top), run each scenario in a spare terminal while you poke the UI.
+
+### 1. Autoscaling (HPA)
+
+```bash
+kubectl get hpa -n app -w
+kubectl get pods -n app -l app=web -w     # in a second pane
+```
+
+Click **Generate Load** in the browser 3–5 times in quick succession.
+
+**Expected:** HPA `TARGETS` jumps past `50%`; within ~15s `REPLICAS` climbs `1 → 3 → 5`; new pods appear as `Pending → ContainerCreating → Running`. Stops the load and you'll see scale-down begin after a ~60s stabilization window.
+
+### 2. Self-healing
+
+```bash
+kubectl get pods -n app -l app=web -w
+kubectl delete pod -n app -l app=web --force --grace-period=0 | head -1
+```
+
+**Expected:** killed pod goes `Terminating → gone`; the Deployment controller spawns a replacement immediately; the dashboard's pod-name label flips to the surviving/new pod with no visible downtime.
+
+### 3. Cache vs DB (ephemeral vs persistent state)
+
+In the browser:
+1. Click **Write to DB** a few times — Postgres counter rises.
+2. Click **Generate Load** — Redis counter rises much faster.
+3. Click **Reset Cache**.
+
+**Expected:** Redis counter → `0` instantly; Postgres counter unchanged. Bonus — prove persistence survives pod death:
+
+```bash
+kubectl delete pod -n app postgres-0
+kubectl get pods -n app postgres-0 -w
+```
+
+Refresh the dashboard — Postgres counter is still there (PVC survived).
+
+### 4. Zero-downtime rolling update
+
+```bash
+kubectl get pods -n app -l app=web -w
+kubectl patch deploy/web -n app \
+  -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"rolled\":\"$(date +%s)\"}}}}}"
+```
+
+**Expected:** a new pod reaches `Ready` *before* an old one is terminated (`maxUnavailable: 0`, `maxSurge: 1`); `preStop: sleep 20` + readiness probe drain in-flight requests; dashboard never errors.
+
+### Observability cheatsheet
+
+```bash
+kubectl top pods -n app                                     # needs metrics-server
+kubectl logs -n app -l app=web -f --max-log-requests=10     # tail all web pods
+kubectl get events -n app --sort-by=.lastTimestamp | tail   # recent events
+kubectl describe hpa web -n app                             # why HPA did what it did
+```
+
+### Teardown
+
+```bash
+kubectl delete -k infra/overlays/<platform>/
+```
+
+Full walkthrough with more edge cases: [`docs/playground.md`](docs/playground.md).
 
 ## Quickstart on bare-metal (3× $5 VPS)
 
