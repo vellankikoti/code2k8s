@@ -106,7 +106,9 @@ spec:
     spec:
       containers:
         - name: web
-          image: CHANGE-ME/your-next-app:latest
+          # Published automatically by .github/workflows/publish-demo.yml
+          # Swap for your own image if you forked this repo.
+          image: ghcr.io/vellankikoti/next-postgres-redis:latest
           ports: [{ containerPort: 3000 }]
           env:
             - name: DATABASE_URL

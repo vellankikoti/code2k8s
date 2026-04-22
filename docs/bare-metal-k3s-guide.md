@@ -405,7 +405,7 @@ Visit https://app.apps.example.com — valid cert, no warnings.
 
 ---
 
-> **Need a concrete app image?** `examples/next-postgres-redis/` in this repo is a minimal Next.js app wired to both `DATABASE_URL` and `REDIS_URL`. Build, push, and use its tag.
+> **Need a concrete app image?** Use `ghcr.io/vellankikoti/next-postgres-redis:latest` — a minimal Next.js app wired to both `DATABASE_URL` and `REDIS_URL`, published automatically by this repo's GitHub Action (`.github/workflows/publish-demo.yml`, builds for `amd64` and `arm64`). Source in `examples/next-postgres-redis/` — fork the repo to publish your own under your namespace.
 
 ## 8. Rolling out new versions
 
