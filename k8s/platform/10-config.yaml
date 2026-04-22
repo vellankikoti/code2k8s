@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: code2k8s-config
+  namespace: code2k8s
+data:
+  BASE_DOMAIN: "apps.local"
+  REGISTRY: "ttl.sh/code2k8s"
+  STORAGE_CLASS: ""
+  CERT_ISSUER: ""

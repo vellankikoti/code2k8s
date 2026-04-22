@@ -1,0 +1,49 @@
+# Example of what code2k8s renders per user app.
+# namespace = app-<slug>
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: app, namespace: app-demo, labels: { app: demo, managed-by: code2k8s } }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: demo } }
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  template:
+    metadata: { labels: { app: demo } }
+    spec:
+      containers:
+        - name: app
+          image: ttl.sh/code2k8s/demo:abc12345
+          ports: [{ containerPort: 3000 }]
+          readinessProbe: { httpGet: { path: /, port: 3000 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          livenessProbe:  { httpGet: { path: /, port: 3000 }, initialDelaySeconds: 15, periodSeconds: 20 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: app, namespace: app-demo }
+spec:
+  selector: { app: demo }
+  ports: [{ port: 80, targetPort: 3000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: { name: app, namespace: app-demo }
+spec:
+  rules:
+    - host: demo.apps.local
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: app, port: { number: 80 } } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: app, namespace: app-demo }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: app }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }

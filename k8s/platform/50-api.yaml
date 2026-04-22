@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: code2k8s
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: api } }
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  template:
+    metadata: { labels: { app: api } }
+    spec:
+      serviceAccountName: code2k8s-api
+      containers:
+        - name: api
+          image: ghcr.io/yourorg/code2k8s-api:latest
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: IN_CLUSTER, value: "true" }
+            - { name: DATABASE_URL, value: "postgres://postgres:postgres@postgres.code2k8s.svc.cluster.local:5432/code2k8s" }
+            - { name: REDIS_URL, value: "redis://redis.code2k8s.svc.cluster.local:6379" }
+          envFrom: [{ configMapRef: { name: code2k8s-config } }]
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 5 }
+          livenessProbe:  { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 20 }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { cpu: 1000m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: code2k8s
+spec:
+  selector: { app: api }
+  ports: [{ port: 80, targetPort: 8080 }]
