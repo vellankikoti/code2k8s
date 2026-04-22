@@ -16,13 +16,15 @@ interface RenderArgs {
   /** If false, deploy with no probes and 1 replica — used during port discovery. */
   probes: boolean;
   replicas?: number;
+  /** Secrets to envFrom — lets attached databases inject DATABASE_URL etc. */
+  envFromSecrets?: string[];
 }
 
 function labels(slug: string) {
   return { app: slug, "managed-by": "code2k8s" };
 }
 
-export function renderDeployment({ slug, image, port, probes, replicas = 2 }: RenderArgs) {
+export function renderDeployment({ slug, image, port, probes, replicas = 2, envFromSecrets = [] }: RenderArgs) {
   const l = labels(slug);
   const container: Record<string, unknown> = {
     name: "app",
@@ -33,6 +35,9 @@ export function renderDeployment({ slug, image, port, probes, replicas = 2 }: Re
       limits: { cpu: "500m", memory: "512Mi" },
     },
   };
+  if (envFromSecrets.length > 0) {
+    container.envFrom = envFromSecrets.map((name) => ({ secretRef: { name } }));
+  }
   if (probes) {
     container.readinessProbe = { tcpSocket: { port }, initialDelaySeconds: 2, periodSeconds: 5, failureThreshold: 6 };
     container.livenessProbe = { tcpSocket: { port }, initialDelaySeconds: 20, periodSeconds: 20, failureThreshold: 6 };

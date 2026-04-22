@@ -9,10 +9,16 @@ interface Dep {
   deleted_at: string | null;
 }
 
+interface Database {
+  id: string; kind: string; env_var: string; status: string; error: string | null;
+  service_name: string; created_at: string;
+}
+
 export default function DeploymentDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const [dep, setDep] = useState<Dep | null>(null);
+  const [dbs, setDbs] = useState<Database[]>([]);
   const [lines, setLines] = useState<string[]>([]);
   const logsRef = useRef<HTMLDivElement>(null);
 
@@ -20,8 +26,12 @@ export default function DeploymentDetail({ params }: { params: Promise<{ id: str
     let cancelled = false;
     const poll = async () => {
       while (!cancelled) {
-        const res = await fetch(`/api/deployments/${id}`);
-        if (res.ok) setDep(await res.json());
+        const [dr, er] = await Promise.all([
+          fetch(`/api/deployments/${id}`),
+          fetch(`/api/deployments/${id}/databases`),
+        ]);
+        if (dr.ok) setDep(await dr.json());
+        if (er.ok) setDbs(await er.json());
         await new Promise((r) => setTimeout(r, 2500));
       }
     };
@@ -58,6 +68,8 @@ export default function DeploymentDetail({ params }: { params: Promise<{ id: str
         <div className="kv"><span>Replicas</span><code>{dep.min_replicas}–{dep.max_replicas}</code></div>
       </div>
 
+      {!isGone && <DatabasesPanel deploymentId={dep.id} dbs={dbs} disabled={dep.deleted_at !== null} />}
+
       {!isGone && <ManagePanel dep={dep} disabled={!canManage} onDeleted={() => router.push("/deployments")} />}
 
       <h2 style={{ fontSize: "1rem", color: "var(--muted)", marginTop: "2rem", marginBottom: "0.5rem" }}>Live logs</h2>
@@ -66,6 +78,87 @@ export default function DeploymentDetail({ params }: { params: Promise<{ id: str
       </div>
     </>
   );
+}
+
+function DatabasesPanel({ deploymentId, dbs, disabled }: { deploymentId: string; dbs: Database[]; disabled: boolean }) {
+  const [envVar, setEnvVar] = useState("DATABASE_URL");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function attach() {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(`/api/deployments/${deploymentId}/databases`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "postgres", envVar }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function detach(dbId: string) {
+    if (!confirm("Detach this database? Data will be destroyed.")) return;
+    const res = await fetch(`/api/deployments/${deploymentId}/databases/${dbId}`, { method: "DELETE" });
+    if (!res.ok) alert(`Detach failed: ${(await res.json()).error ?? res.status}`);
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: "1rem" }}>
+      <h3 style={{ marginTop: 0 }}>Databases</h3>
+
+      {dbs.length === 0 && <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>No databases attached. Click below to provision one inside this deployment&apos;s namespace.</p>}
+
+      {dbs.length > 0 && (
+        <table style={{ marginBottom: "1rem" }}>
+          <thead>
+            <tr><th>Env var</th><th>Kind</th><th>Service</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+            {dbs.map((d) => (
+              <tr key={d.id}>
+                <td><code>${d.env_var}</code></td>
+                <td>{d.kind}</td>
+                <td style={{ color: "var(--muted)" }}><code>{d.service_name}</code></td>
+                <td><span className={`status s-${dbStatusClass(d.status)}`}>{d.status}</span></td>
+                <td style={{ textAlign: "right" }}>
+                  <button className="btn-sm danger" disabled={disabled} onClick={() => detach(d.id)}>Detach</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <label style={{ display: "block", fontSize: "0.8rem", color: "var(--muted)", marginBottom: "0.3rem" }}>Attach Postgres as env var</label>
+          <input
+            value={envVar}
+            onChange={(e) => setEnvVar(e.target.value.toUpperCase())}
+            placeholder="DATABASE_URL"
+            disabled={disabled || busy}
+            style={{ width: "100%", padding: "0.55rem 0.75rem", background: "#0b0b10", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 6, font: "inherit" }}
+          />
+        </div>
+        <button className="btn ghost" disabled={disabled || busy || !/^[A-Z][A-Z0-9_]*$/.test(envVar)} onClick={attach}>
+          {busy ? "Provisioning…" : "Attach Postgres"}
+        </button>
+      </div>
+      {err && <p style={{ color: "#ff8a8a", fontSize: "0.85rem", marginTop: "0.5rem" }}>{err}</p>}
+      <p style={{ color: "var(--muted)", fontSize: "0.82rem", marginTop: "0.75rem" }}>
+        A one-pod StatefulSet is provisioned in <code>app-{"{slug}"}</code> with random credentials. The URL is injected into your app via <code>envFrom</code> — no restart needed for new deploys; existing pods roll when the database becomes ready.
+      </p>
+    </div>
+  );
+}
+
+function dbStatusClass(s: string) {
+  return ({ ready: "live", failed: "failed", deleted: "deleting" } as Record<string, string>)[s] ?? "building";
 }
 
 function ManagePanel({ dep, disabled, onDeleted }: { dep: Dep; disabled: boolean; onDeleted: () => void }) {

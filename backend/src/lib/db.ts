@@ -24,6 +24,21 @@ export async function migrate() {
     ALTER TABLE deployments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
     ALTER TABLE deployments ADD COLUMN IF NOT EXISTS min_replicas INTEGER NOT NULL DEFAULT 2;
     ALTER TABLE deployments ADD COLUMN IF NOT EXISTS max_replicas INTEGER NOT NULL DEFAULT 10;
+    CREATE TABLE IF NOT EXISTS databases (
+      id            TEXT PRIMARY KEY,
+      deployment_id TEXT NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
+      kind          TEXT NOT NULL,
+      env_var       TEXT NOT NULL DEFAULT 'DATABASE_URL',
+      secret_name   TEXT NOT NULL,
+      service_name  TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      error         TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deleted_at    TIMESTAMPTZ
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_databases_env
+      ON databases(deployment_id, env_var) WHERE deleted_at IS NULL;
+
     CREATE TABLE IF NOT EXISTS events (
       id           BIGSERIAL PRIMARY KEY,
       deployment_id TEXT NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
@@ -59,4 +74,20 @@ export interface Deployment {
   deleted_at: string | null;
   min_replicas: number;
   max_replicas: number;
+}
+
+export type DatabaseKind = "postgres";
+export type DatabaseStatus = "pending" | "provisioning" | "ready" | "failed" | "deleting" | "deleted";
+
+export interface Database {
+  id: string;
+  deployment_id: string;
+  kind: DatabaseKind;
+  env_var: string;
+  secret_name: string;
+  service_name: string;
+  status: DatabaseStatus;
+  error: string | null;
+  created_at: string;
+  deleted_at: string | null;
 }

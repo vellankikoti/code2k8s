@@ -8,6 +8,7 @@ import {
 import { fetchExposedPorts } from "./dockerfileInspect.js";
 import { discoverPort } from "./portProbe.js";
 import { isDeleted } from "./lifecycle.js";
+import { readyDatabasesFor } from "./databases.js";
 import { config } from "../config.js";
 
 class DeletedError extends Error {
@@ -72,7 +73,7 @@ export async function runDeployment(depId: string) {
     // ── Phase 3: Probe-less deploy ────────────────────────────────────
     const ns = namespaceFor(d.slug);
     await ensureNamespace(ns);
-    await applyDeployment(d.slug, image, guess, false, 1);
+    await applyDeployment(d.slug, image, guess, false, 1, d.id);
     await applyService(d.slug, guess);
     await applyIngress(d.slug);
     await event(depId, `Applied probe-less Deployment, Service, Ingress in ${ns}`);
@@ -97,7 +98,7 @@ export async function runDeployment(depId: string) {
 
     await bailIfDeleted(depId);
     // ── Phase 5: Final manifests with probes + HPA + scale up ──────────
-    await applyDeployment(d.slug, image, winner, true, 2);
+    await applyDeployment(d.slug, image, winner, true, 2, d.id);
     await applyService(d.slug, winner);
     await applyHPA(d.slug);
     await patch(depId, { port: winner });
@@ -135,9 +136,10 @@ export async function runDeployment(depId: string) {
 
 // ─── helpers ───────────────────────────────────────────────────────────
 
-async function applyDeployment(slug: string, image: string, port: number, probes: boolean, replicas: number) {
+async function applyDeployment(slug: string, image: string, port: number, probes: boolean, replicas: number, depId?: string) {
   const ns = namespaceFor(slug);
-  const m = renderDeployment({ slug, image, port, probes, replicas });
+  const envFromSecrets = depId ? (await readyDatabasesFor(depId)).map((d) => d.secret_name) : [];
+  const m = renderDeployment({ slug, image, port, probes, replicas, envFromSecrets });
   await applyOrReplace(
     () => apps.readNamespacedDeployment("app", ns),
     () => apps.createNamespacedDeployment(ns, m as never),
@@ -235,3 +237,13 @@ async function waitForDeploymentReady(ns: string, depId: string) {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Re-apply the live Deployment manifest with current `envFrom` secrets.
+ * Used when a database is attached/detached after the app is already live —
+ * the change in envFrom triggers a rolling restart automatically.
+ */
+export async function reconcileLiveDeployment(d: Deployment) {
+  if (d.status !== "live" || !d.image || !d.port) return;
+  await applyDeployment(d.slug, d.image, d.port, true, d.min_replicas, d.id);
+}

@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { db, type Deployment } from "../lib/db.js";
 import { buildQueue, redis, LOG_CHANNEL } from "../lib/queue.js";
 import { deleteDeployment, restartDeployment, scaleDeployment } from "../services/lifecycle.js";
+import { attachPostgres, detachDatabase, listDatabases } from "../services/databases.js";
+import { reconcileLiveDeployment } from "../services/deployer.js";
 
 export const deployments = Router();
 
@@ -95,6 +97,66 @@ deployments.post("/:id/restart", async (req, res) => {
     res.status(400).json({ error: (err as Error).message });
   }
 });
+
+// ── Databases ────────────────────────────────────────────────────────
+
+const AttachSchema = z.object({
+  kind: z.literal("postgres"),
+  envVar: z.string().regex(/^[A-Z][A-Z0-9_]*$/).default("DATABASE_URL"),
+});
+
+deployments.get("/:id/databases", async (req, res) => {
+  const d = await loadDeployment(req.params.id);
+  if (!d) return res.status(404).json({ error: "not found" });
+  res.json(await listDatabases(d.id));
+});
+
+deployments.post("/:id/databases", async (req, res) => {
+  const parsed = AttachSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const d = await loadDeployment(req.params.id);
+  if (!d) return res.status(404).json({ error: "not found" });
+  if (d.deleted_at) return res.status(400).json({ error: "deployment is deleted" });
+  try {
+    const record = await attachPostgres(d, parsed.data.envVar);
+    // Watch for ready, then trigger reconcile so env var lands in the pod template.
+    watchUntilReadyThenReconcile(d.id, record.id).catch(() => {});
+    res.status(201).json(record);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+deployments.delete("/:id/databases/:dbId", async (req, res) => {
+  const d = await loadDeployment(req.params.id);
+  if (!d) return res.status(404).json({ error: "not found" });
+  try {
+    await detachDatabase(d, req.params.dbId);
+    // Post-detach: reconcile so the env var disappears from the pod template.
+    const fresh = await loadDeployment(d.id);
+    if (fresh) await reconcileLiveDeployment(fresh);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+async function watchUntilReadyThenReconcile(depId: string, dbId: string) {
+  const deadline = Date.now() + 6 * 60_000;
+  while (Date.now() < deadline) {
+    const { rows } = await db.query<{ status: string }>(
+      "SELECT status FROM databases WHERE id = $1", [dbId],
+    );
+    const s = rows[0]?.status;
+    if (s === "ready") {
+      const dep = await loadDeployment(depId);
+      if (dep) await reconcileLiveDeployment(dep);
+      return;
+    }
+    if (s === "failed" || s === "deleted") return;
+    await new Promise((r) => setTimeout(r, 3_000));
+  }
+}
 
 deployments.get("/:id/logs", async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
