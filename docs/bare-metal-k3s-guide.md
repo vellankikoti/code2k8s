@@ -350,6 +350,7 @@ spec:
     spec:
       containers:
         - name: web
+          # Build & push `examples/next-postgres-redis/` or use your own image:
           image: ghcr.io/yourorg/your-next-app:latest  # ← EDIT
           ports: [{ containerPort: 3000 }]
           env:
@@ -403,6 +404,8 @@ kubectl -n app get certificate
 Visit https://app.apps.example.com — valid cert, no warnings.
 
 ---
+
+> **Need a concrete app image?** `examples/next-postgres-redis/` in this repo is a minimal Next.js app wired to both `DATABASE_URL` and `REDIS_URL`. Build, push, and use its tag.
 
 ## 8. Rolling out new versions
 
