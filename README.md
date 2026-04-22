@@ -62,9 +62,11 @@ git clone https://github.com/vellankikoti/code2k8s && cd code2k8s
 kubectl apply -k infra/overlays/<platform>/
 ```
 
-See [`docs/platforms.md`](docs/platforms.md) for the per-platform prereqs (ingress controller, cert-manager, storage class). The base manifests in `infra/base/` are cluster-neutral — only the overlays touch platform-specific fields.
+When the script finishes you'll see a **"What to do next"** block with the exact URL/port to open and the four demo scenarios to run. On killercoda that's the **`30080`** tab at the top of the terminal (add it via `+` → *Select port to view on Host 1* → `30080`). On k3d / minikube / Docker Desktop: `kubectl -n app port-forward svc/web 8080:80` and open `http://localhost:8080`.
 
-Once it's up, open the app URL and work through the [live playground scenarios](docs/playground.md) — click **Generate Load**, then watch `kubectl get hpa -n app -w` scale from 1 to 5 replicas.
+If the rollout times out, the script prints a diagnostic snapshot (pods, PVCs, recent events, `describe` of the first web pod) and the two most common fixes — usually a Pending PVC (no default StorageClass) or a still-pulling image. Re-run the script once Postgres is Running.
+
+See [`docs/platforms.md`](docs/platforms.md) for the per-platform prereqs (ingress controller, cert-manager, storage class). The base manifests in `infra/base/` are cluster-neutral — only the overlays touch platform-specific fields. Once it's up, the four demo scenarios (autoscaling, self-healing, cache vs DB, rolling update) are in [`docs/playground.md`](docs/playground.md).
 
 ## Quickstart on bare-metal (3× $5 VPS)
 
