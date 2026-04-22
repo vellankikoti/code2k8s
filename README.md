@@ -1,11 +1,11 @@
-# Deploy Next.js + Postgres + Redis to Kubernetes — works on any cluster
+# Code2K8s — Deploy Next.js + Postgres + Redis to Kubernetes, then poke it
 
-> A hands-on guide to standing up a real k8s stack — with HTTPS, persistent storage, and zero-downtime deploys. Nothing invented; every component is a stock install of a public project. Kustomize overlays ship for **killercoda, k3d, Docker Desktop, minikube, bare-metal VPS, EKS, GKE, AKS**.
+> A hands-on guide to standing up a real k8s stack — with HTTPS, persistent storage, and zero-downtime deploys — and a **live playground** for watching Kubernetes react to load, pod kills, and rolling updates in real time. Nothing invented; every component is a stock install of a public project. Kustomize overlays ship for **killercoda, k3d, Docker Desktop, minikube, bare-metal VPS, EKS, GKE, AKS**.
 
 - **Try it free in the browser** (no install, no card): [killercoda instructions →](docs/platforms.md#start-free-in-the-browser-killercoda)
+- **Live playground demos** — autoscaling, self-healing, cache vs state, rolling updates: [walkthrough →](docs/playground.md)
 - **Run it on 3× $5 VPS**: [bare-metal walkthrough →](docs/bare-metal-k3s-guide.md)
 - **Any other cluster**: [platform overlay matrix →](docs/platforms.md)
-- **Poke the running cluster** (autoscale, self-heal, rolling-update demos): [live playground →](docs/playground.md)
 
 ---
 
@@ -38,6 +38,7 @@
 - **Zero-downtime rolling deploys.** `maxUnavailable: 0` + readiness probes = no dropped requests when you ship.
 - **No cloud lock-in.** Works identically on any provider that gives you an SSH-able Linux box.
 - **Learn the primitives.** You end up with manifests you could commit and maintain by hand — not a black-box PaaS.
+- **See it behave, not just run.** The demo app has buttons that trigger load, flush cache, and write to the DB — while you watch `kubectl get hpa -w` and `kubectl get pods -w` show the cluster reacting. [Playground scenarios →](docs/playground.md)
 
 ## Stack
 
@@ -52,11 +53,18 @@
 
 ```bash
 git clone https://github.com/vellankikoti/code2k8s && cd code2k8s
+
+# One-liner: installs metrics-server (for the HPA demo) and applies the overlay.
+./scripts/playground-up.sh killercoda
+# overlays: killercoda · k3d · docker-desktop · minikube · bare-metal · eks · gke · aks
+
+# ...or do it by hand:
 kubectl apply -k infra/overlays/<platform>/
-# platforms:  killercoda · k3d · docker-desktop · minikube · bare-metal · eks · gke · aks
 ```
 
 See [`docs/platforms.md`](docs/platforms.md) for the per-platform prereqs (ingress controller, cert-manager, storage class). The base manifests in `infra/base/` are cluster-neutral — only the overlays touch platform-specific fields.
+
+Once it's up, open the app URL and work through the [live playground scenarios](docs/playground.md) — click **Generate Load**, then watch `kubectl get hpa -n app -w` scale from 1 to 5 replicas.
 
 ## Quickstart on bare-metal (3× $5 VPS)
 
@@ -88,10 +96,12 @@ See the [full guide](docs/bare-metal-k3s-guide.md) for the explanation behind ea
 ```
 docs/
 ├── bare-metal-k3s-guide.md    ← the in-depth VPS walkthrough
-└── platforms.md               ← per-platform overlay matrix + killercoda instructions
+├── platforms.md               ← per-platform overlay matrix + killercoda instructions
+└── playground.md              ← live k8s demo scenarios (HPA, self-heal, rolling update)
 
 infra/
-├── base/                      ← cluster-neutral manifests (Kustomize base)
+├── base/                      ← cluster-neutral manifests (Deployment, StatefulSets,
+│                                 HPA, Ingress — Kustomize base)
 ├── overlays/
 │   ├── killercoda/            ← run free in a browser
 │   ├── k3d/  docker-desktop/  minikube/
@@ -99,7 +109,11 @@ infra/
 │   └── eks/  gke/  aks/
 └── scripts/                   ← bootstrap scripts for the bare-metal path
 
-examples/next-postgres-redis/  ← the demo app (built & published via GitHub Actions)
+scripts/
+└── playground-up.sh           ← installs metrics-server + applies an overlay
+
+examples/next-postgres-redis/  ← the demo app: Next.js dashboard + /api endpoints
+                                 (built & published via GitHub Actions)
 ```
 
 ## FAQ
@@ -113,6 +127,10 @@ examples/next-postgres-redis/  ← the demo app (built & published via GitHub Ac
 **Why k3s over full Kubernetes?** Full control-plane pods eat ~1 GB of RAM before anything of yours runs. k3s with SQLite does the same job in ~250 MB. Upgrade when you outgrow it; the YAML is identical.
 
 **Can I use my existing domain?** Yes — set the wildcard A record and edit the two `CHANGE-ME` host names in `infra/cluster/app-stack.yaml`.
+
+**Is this a PaaS / Heroku clone?** No. You don't paste a repo URL and get a deploy. It deploys one specific demo app so you have a real workload to *observe* Kubernetes behavior against — autoscaling, self-healing, rolling updates. If you want repo-to-deploy, look at Coolify, Dokku, or CapRover.
+
+**Will the HPA work on my cluster?** It needs `metrics-server` installed. `./scripts/playground-up.sh` installs it for you; EKS/GKE/AKS have it as an add-on; k3s and Docker Desktop ship it enabled.
 
 ## License
 
