@@ -76,17 +76,27 @@ async function provisionPostgres(
   await db.query("UPDATE databases SET status='provisioning' WHERE id=$1", [record.id]);
   await event(dep.id, `Provisioning Postgres (${record.env_var})…`);
 
-  // 1. Secret — app envFrom references these keys; also stores DATABASE_URL for convenience.
-  const url = `postgres://${creds.user}:${creds.password}@${record.service_name}.${ns}.svc.cluster.local:5432/${creds.dbname}`;
+  // 1. Secret — carries every common naming convention so templates can valueFrom any of them.
+  const host = `${record.service_name}.${ns}.svc.cluster.local`;
+  const url = `postgres://${creds.user}:${creds.password}@${host}:5432/${creds.dbname}`;
   const secretBody = {
     apiVersion: "v1",
     kind: "Secret",
     metadata: { name: record.secret_name, namespace: ns, labels: { "managed-by": "code2k8s", "code2k8s.db-id": record.id } },
     type: "Opaque",
     stringData: {
+      // Postgres container startup
       POSTGRES_USER: creds.user,
       POSTGRES_PASSWORD: creds.password,
       POSTGRES_DB: creds.dbname,
+      // Generic app-side conventions — apps pick whichever matches their framework.
+      DB_HOST: host,
+      DB_PORT: "5432",
+      DB_USER: creds.user,
+      DB_PASSWORD: creds.password,
+      DB_NAME: creds.dbname,
+      DB_DATABASE: creds.dbname,
+      DATABASE_URL: url,
       [record.env_var]: url,
     },
   };

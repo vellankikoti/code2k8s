@@ -9,6 +9,15 @@ import { reconcileLiveDeployment } from "../services/deployer.js";
 
 export const deployments = Router();
 
+const EnvSpecSchema = z.union([
+  z.object({ name: z.string().regex(/^[A-Z][A-Z0-9_]*$/), value: z.string() }),
+  z.object({
+    name: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+    fromDatabase: z.string(),
+    key: z.string(),
+  }),
+]);
+
 const CreateSchema = z.object({
   repoUrl: z.string().url().refine((u) => u.includes("github.com") || u.endsWith(".git"), {
     message: "Must be a GitHub URL or end with .git",
@@ -16,6 +25,8 @@ const CreateSchema = z.object({
   branch: z.string().min(1).default("main"),
   port: z.number().int().min(0).max(65535).default(0),
   slug: z.string().regex(/^[a-z][a-z0-9-]{1,30}$/).optional(),
+  bootstrapPostgres: z.boolean().default(false),
+  extraEnv: z.array(EnvSpecSchema).max(40).default([]),
 });
 
 const ScaleSchema = z.object({
@@ -40,9 +51,12 @@ deployments.post("/", async (req, res) => {
   const id = randomUUID();
   const slug = parsed.data.slug ?? slugify(parsed.data.repoUrl);
   const { rows } = await db.query<Deployment>(
-    `INSERT INTO deployments (id, slug, repo_url, branch, port)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [id, slug, parsed.data.repoUrl, parsed.data.branch, parsed.data.port],
+    `INSERT INTO deployments (id, slug, repo_url, branch, port, bootstrap_postgres, extra_env)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) RETURNING *`,
+    [
+      id, slug, parsed.data.repoUrl, parsed.data.branch, parsed.data.port,
+      parsed.data.bootstrapPostgres, JSON.stringify(parsed.data.extraEnv),
+    ],
   );
   await buildQueue.add("build", { deploymentId: id }, { jobId: id });
   res.status(201).json(rows[0]);

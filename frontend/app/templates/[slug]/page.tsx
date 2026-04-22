@@ -25,7 +25,16 @@ export default async function TemplatePage({ params }: { params: Promise<Params>
   const t = templateBySlug(slug);
   if (!t) notFound();
 
-  const deployHref = `/deploy?repoUrl=${encodeURIComponent(t.repoUrl)}&branch=${t.branch}&port=${t.port}&slug=${t.slug}`;
+  const qs = new URLSearchParams({
+    repoUrl: t.repoUrl,
+    branch: t.branch,
+    port: String(t.port),
+    slug: t.slug,
+  });
+  if (t.bootstrap) {
+    qs.set("bootstrap", encodeURIComponent(JSON.stringify(t.bootstrap)));
+  }
+  const deployHref = `/deploy?${qs.toString()}`;
 
   return (
     <>
@@ -34,7 +43,7 @@ export default async function TemplatePage({ params }: { params: Promise<Params>
       <p className="lede">{t.blurb}</p>
       <div className="chips" style={{ marginBottom: "1.5rem" }}>
         {t.tags.map((tag) => <span key={tag} className="chip">{tag}</span>)}
-        {!t.standalone && <span className="badge">needs external database</span>}
+        {t.bootstrap?.postgres && <span className="chip" style={{ borderColor: "#2a5c3b", color: "#7cf0a0" }}>includes Postgres</span>}
       </div>
 
       <div className="card" style={{ marginBottom: "1.5rem" }}>
@@ -42,6 +51,7 @@ export default async function TemplatePage({ params }: { params: Promise<Params>
         <div className="kv"><span>Branch</span><code>{t.branch}</code></div>
         <div className="kv"><span>Container port</span><code>{t.port}</code></div>
         <div className="kv"><span>Category</span>{t.category}</div>
+        {t.bootstrap?.postgres && <div className="kv"><span>Bootstrap</span>Postgres 16 + {t.bootstrap.extraEnv?.length ?? 0} pre-wired env vars</div>}
       </div>
 
       <Link className="btn primary big" href={deployHref}>Deploy {t.title} →</Link>
@@ -49,12 +59,32 @@ export default async function TemplatePage({ params }: { params: Promise<Params>
       <section style={{ marginTop: "3rem" }}>
         <h2 style={{ fontSize: "1.1rem" }}>What happens when you click Deploy</h2>
         <ol className="steps small">
-          <li>We fork a record in our database and queue a build job.</li>
-          <li>Kaniko clones the repo inside the cluster and builds the image.</li>
-          <li>We render a Deployment + Service + Ingress + HPA, apply them, and wait for the rollout.</li>
-          <li>Your URL is printed the second the first pod is Ready.</li>
+          <li>We queue a Kaniko build inside the cluster.</li>
+          {t.bootstrap?.postgres && <li>We provision a Postgres StatefulSet in the app&apos;s namespace and wait for it to be ready.</li>}
+          <li>We render a Deployment + Service + Ingress + HPA{t.bootstrap?.postgres ? ", wired to the provisioned database," : ""} and apply them.</li>
+          <li>The URL is printed the second the first pod is Ready.</li>
         </ol>
       </section>
+
+      {t.bootstrap?.extraEnv && t.bootstrap.extraEnv.length > 0 && (
+        <section style={{ marginTop: "1.5rem" }}>
+          <h2 style={{ fontSize: "1.1rem" }}>Auto-injected env vars</h2>
+          <table>
+            <thead><tr><th>Name</th><th>Source</th></tr></thead>
+            <tbody>
+              {t.bootstrap.extraEnv.map((e) => (
+                <tr key={e.name}>
+                  <td><code>{e.name}</code></td>
+                  <td style={{ color: "var(--muted)" }}>
+                    {"value" in e ? <>literal: <code>{e.value.length > 40 ? e.value.slice(0, 40) + "…" : e.value}</code></> :
+                      <>from DB secret key <code>{e.key}</code></>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
     </>
   );
 }

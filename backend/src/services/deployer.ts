@@ -8,7 +8,7 @@ import {
 import { fetchExposedPorts } from "./dockerfileInspect.js";
 import { discoverPort } from "./portProbe.js";
 import { isDeleted } from "./lifecycle.js";
-import { readyDatabasesFor } from "./databases.js";
+import { attachPostgres, readyDatabasesFor } from "./databases.js";
 import { config } from "../config.js";
 
 class DeletedError extends Error {
@@ -70,9 +70,21 @@ export async function runDeployment(depId: string) {
     const guess = d.port || exposed[0] || 3000;
     await event(depId, `Initial guess: port ${guess}`);
 
-    // ── Phase 3: Probe-less deploy ────────────────────────────────────
     const ns = namespaceFor(d.slug);
     await ensureNamespace(ns);
+
+    // ── Phase 2.5: Bootstrap Postgres before app boots ────────────────
+    // (so DATABASE_URL is present on first pod; no crashloop while DB spins up)
+    if (d.bootstrap_postgres) {
+      const existing = await readyDatabasesFor(d.id);
+      if (existing.length === 0) {
+        await event(d.id, "Bootstrap: attaching Postgres before app startup…");
+        await attachPostgres(d, "DATABASE_URL");
+        await waitForDatabaseReady(d.id, "DATABASE_URL", depId);
+      }
+    }
+
+    // ── Phase 3: Probe-less deploy ────────────────────────────────────
     await applyDeployment(d.slug, image, guess, false, 1, d.id);
     await applyService(d.slug, guess);
     await applyIngress(d.slug);
@@ -138,13 +150,36 @@ export async function runDeployment(depId: string) {
 
 async function applyDeployment(slug: string, image: string, port: number, probes: boolean, replicas: number, depId?: string) {
   const ns = namespaceFor(slug);
-  const envFromSecrets = depId ? (await readyDatabasesFor(depId)).map((d) => d.secret_name) : [];
-  const m = renderDeployment({ slug, image, port, probes, replicas, envFromSecrets });
+  let envFromSecrets: string[] = [];
+  let env: Array<{ name: string; value?: string; valueFrom?: { secretKeyRef: { name: string; key: string } } }> = [];
+  if (depId) {
+    const dbs = await readyDatabasesFor(depId);
+    envFromSecrets = dbs.map((d) => d.secret_name);
+    const depRow = await db.query<Deployment>("SELECT * FROM deployments WHERE id = $1", [depId]);
+    env = resolveEnv(depRow.rows[0]?.extra_env ?? [], dbs);
+  }
+  const m = renderDeployment({ slug, image, port, probes, replicas, envFromSecrets, env });
   await applyOrReplace(
     () => apps.readNamespacedDeployment("app", ns),
     () => apps.createNamespacedDeployment(ns, m as never),
     () => apps.replaceNamespacedDeployment("app", ns, m as never),
   );
+}
+
+function resolveEnv(spec: unknown[], dbs: { env_var: string; secret_name: string }[]) {
+  const out: Array<{ name: string; value?: string; valueFrom?: { secretKeyRef: { name: string; key: string } } }> = [];
+  for (const raw of spec) {
+    const e = raw as { name: string; value?: string; fromDatabase?: string; key?: string };
+    if (!e.name) continue;
+    if (e.value !== undefined) {
+      out.push({ name: e.name, value: e.value });
+    } else if (e.fromDatabase && e.key) {
+      const db = dbs.find((d) => d.env_var === e.fromDatabase);
+      if (!db) continue; // DB not yet ready — skip; re-apply later will include it.
+      out.push({ name: e.name, valueFrom: { secretKeyRef: { name: db.secret_name, key: e.key } } });
+    }
+  }
+  return out;
 }
 
 async function applyService(slug: string, port: number) {
@@ -237,6 +272,21 @@ async function waitForDeploymentReady(ns: string, depId: string) {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function waitForDatabaseReady(depId: string, envVar: string, _logId: string) {
+  const deadline = Date.now() + 6 * 60_000;
+  while (Date.now() < deadline) {
+    const { rows } = await db.query<{ status: string }>(
+      "SELECT status FROM databases WHERE deployment_id=$1 AND env_var=$2 AND deleted_at IS NULL",
+      [depId, envVar],
+    );
+    const s = rows[0]?.status;
+    if (s === "ready") return;
+    if (s === "failed") throw new Error(`Database ${envVar} provisioning failed`);
+    await sleep(3_000);
+  }
+  throw new Error(`Database ${envVar} did not become ready within 6 minutes`);
+}
 
 /**
  * Re-apply the live Deployment manifest with current `envFrom` secrets.

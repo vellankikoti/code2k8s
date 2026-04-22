@@ -19,9 +19,34 @@
   { "slug": "code-server",         "title": "code-server (LinuxServer)", "blurb": "Run VS Code on any machine, access from a browser. LinuxServer's production-hardened build.",         "category": "dev-tools",    "standalone": true,  "tags": ["ide", "remote"],                    "repoUrl": "https://github.com/linuxserver/docker-code-server",    "branch": "master", "port": 8443 },
   { "slug": "remix-indie-stack",   "title": "Remix Indie Stack",         "blurb": "A production-ready Remix starter with auth, DB, and deployment config out of the box.",                 "category": "starter",      "standalone": true,  "tags": ["remix", "typescript", "starter"],   "repoUrl": "https://github.com/remix-run/indie-stack",             "branch": "main",   "port": 3000 },
   { "slug": "grafana",             "title": "Grafana",                   "blurb": "The open observability platform. Dashboards for metrics, logs, and traces.",                           "category": "db-required",  "standalone": false, "tags": ["go", "observability"],              "repoUrl": "https://github.com/grafana/grafana",                   "branch": "main",   "port": 3000 },
-  { "slug": "directus",            "title": "Directus",                  "blurb": "Instant REST and GraphQL API + admin app for any SQL database. Needs Postgres.",                      "category": "db-required",  "standalone": false, "tags": ["node", "cms", "api"],               "repoUrl": "https://github.com/directus/directus",                 "branch": "main",   "port": 8055 },
-  { "slug": "metabase",            "title": "Metabase",                  "blurb": "The easy, open-source BI tool — ask questions of your data. Needs a DB to point at.",                  "category": "db-required",  "standalone": false, "tags": ["clojure", "bi"],                    "repoUrl": "https://github.com/metabase/metabase",                 "branch": "master", "port": 3000 },
+  { "slug": "directus",            "title": "Directus",                  "blurb": "Instant REST and GraphQL API + admin app for any SQL database. One-click — Postgres provisioned for you.", "category": "db-required", "standalone": false, "tags": ["node", "cms", "api"],               "repoUrl": "https://github.com/directus/directus",                 "branch": "main",   "port": 8055,
+    "bootstrap": { "postgres": true, "extraEnv": [
+      { "name": "DB_CLIENT",    "value": "pg" },
+      { "name": "DB_HOST",      "fromDatabase": "DATABASE_URL", "key": "DB_HOST" },
+      { "name": "DB_PORT",      "fromDatabase": "DATABASE_URL", "key": "DB_PORT" },
+      { "name": "DB_USER",      "fromDatabase": "DATABASE_URL", "key": "DB_USER" },
+      { "name": "DB_PASSWORD",  "fromDatabase": "DATABASE_URL", "key": "DB_PASSWORD" },
+      { "name": "DB_DATABASE",  "fromDatabase": "DATABASE_URL", "key": "DB_DATABASE" },
+      { "name": "KEY",          "value": "change-me-directus-key-32chars-1" },
+      { "name": "SECRET",       "value": "change-me-directus-secret-32chars" },
+      { "name": "ADMIN_EMAIL",  "value": "admin@example.com" },
+      { "name": "ADMIN_PASSWORD","value": "directus"}
+    ] } },
+  { "slug": "metabase",            "title": "Metabase",                  "blurb": "Open-source BI — ask questions of your data. One-click with a Postgres backend pre-wired.",           "category": "db-required",  "standalone": false, "tags": ["clojure", "bi"],                    "repoUrl": "https://github.com/metabase/metabase",                 "branch": "master", "port": 3000,
+    "bootstrap": { "postgres": true, "extraEnv": [
+      { "name": "MB_DB_TYPE",   "value": "postgres" },
+      { "name": "MB_DB_HOST",   "fromDatabase": "DATABASE_URL", "key": "DB_HOST" },
+      { "name": "MB_DB_PORT",   "fromDatabase": "DATABASE_URL", "key": "DB_PORT" },
+      { "name": "MB_DB_USER",   "fromDatabase": "DATABASE_URL", "key": "DB_USER" },
+      { "name": "MB_DB_PASS",   "fromDatabase": "DATABASE_URL", "key": "DB_PASSWORD" },
+      { "name": "MB_DB_DBNAME", "fromDatabase": "DATABASE_URL", "key": "DB_NAME" }
+    ] } },
   { "slug": "gitea",               "title": "Gitea",                     "blurb": "Git with a cup of tea. Painless self-hosted Git service. Needs a DB for real usage.",                   "category": "db-required",  "standalone": false, "tags": ["go", "git"],                        "repoUrl": "https://github.com/go-gitea/gitea",                    "branch": "main",   "port": 3000 },
-  { "slug": "umami",               "title": "Umami Analytics",           "blurb": "A simple, fast, privacy-focused Google Analytics alternative. Requires Postgres.",                      "category": "db-required",  "standalone": false, "tags": ["next.js", "analytics"],             "repoUrl": "https://github.com/umami-software/umami",              "branch": "master", "port": 3000 },
+  { "slug": "umami",               "title": "Umami Analytics",           "blurb": "A simple, fast, privacy-focused Google Analytics alternative. One-click with Postgres attached.",        "category": "db-required",  "standalone": false, "tags": ["next.js", "analytics"],             "repoUrl": "https://github.com/umami-software/umami",              "branch": "master", "port": 3000,
+    "bootstrap": { "postgres": true, "extraEnv": [
+      { "name": "DATABASE_TYPE", "value": "postgresql" },
+      { "name": "HASH_SALT",     "value": "code2k8s-default-salt-change-me" },
+      { "name": "APP_SECRET",    "value": "code2k8s-default-secret-change-me" }
+    ] } },
   { "slug": "plausible",           "title": "Plausible Analytics",       "blurb": "Privacy-friendly Google Analytics alternative. Production deploy needs Postgres + Clickhouse.",         "category": "db-required",  "standalone": false, "tags": ["elixir", "analytics"],              "repoUrl": "https://github.com/plausible/analytics",               "branch": "master", "port": 8000 }
 ]

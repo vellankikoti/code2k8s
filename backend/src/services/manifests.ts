@@ -18,13 +18,15 @@ interface RenderArgs {
   replicas?: number;
   /** Secrets to envFrom — lets attached databases inject DATABASE_URL etc. */
   envFromSecrets?: string[];
+  /** Explicit env entries (already resolved — literal value or secretKeyRef). */
+  env?: Array<{ name: string; value?: string; valueFrom?: { secretKeyRef: { name: string; key: string } } }>;
 }
 
 function labels(slug: string) {
   return { app: slug, "managed-by": "code2k8s" };
 }
 
-export function renderDeployment({ slug, image, port, probes, replicas = 2, envFromSecrets = [] }: RenderArgs) {
+export function renderDeployment({ slug, image, port, probes, replicas = 2, envFromSecrets = [], env = [] }: RenderArgs) {
   const l = labels(slug);
   const container: Record<string, unknown> = {
     name: "app",
@@ -37,6 +39,9 @@ export function renderDeployment({ slug, image, port, probes, replicas = 2, envF
   };
   if (envFromSecrets.length > 0) {
     container.envFrom = envFromSecrets.map((name) => ({ secretRef: { name } }));
+  }
+  if (env.length > 0) {
+    container.env = env;
   }
   if (probes) {
     container.readinessProbe = { tcpSocket: { port }, initialDelaySeconds: 2, periodSeconds: 5, failureThreshold: 6 };

@@ -24,6 +24,8 @@ export async function migrate() {
     ALTER TABLE deployments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
     ALTER TABLE deployments ADD COLUMN IF NOT EXISTS min_replicas INTEGER NOT NULL DEFAULT 2;
     ALTER TABLE deployments ADD COLUMN IF NOT EXISTS max_replicas INTEGER NOT NULL DEFAULT 10;
+    ALTER TABLE deployments ADD COLUMN IF NOT EXISTS bootstrap_postgres BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE deployments ADD COLUMN IF NOT EXISTS extra_env JSONB NOT NULL DEFAULT '[]'::jsonb;
     CREATE TABLE IF NOT EXISTS databases (
       id            TEXT PRIMARY KEY,
       deployment_id TEXT NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
@@ -59,6 +61,11 @@ export type DeploymentStatus =
   | "deleting"
   | "deleted";
 
+/** Env spec for a single env var. Either a literal value or a reference to the DB Secret. */
+export type EnvSpec =
+  | { name: string; value: string }
+  | { name: string; fromDatabase: string /* env_var of the attached DB */; key: string };
+
 export interface Deployment {
   id: string;
   slug: string;
@@ -74,6 +81,8 @@ export interface Deployment {
   deleted_at: string | null;
   min_replicas: number;
   max_replicas: number;
+  bootstrap_postgres: boolean;
+  extra_env: EnvSpec[];
 }
 
 export type DatabaseKind = "postgres";

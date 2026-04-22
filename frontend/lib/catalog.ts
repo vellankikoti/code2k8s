@@ -1,5 +1,14 @@
 import catalog from "./catalog.json";
 
+export type EnvEntry =
+  | { name: string; value: string }
+  | { name: string; fromDatabase: string; key: string };
+
+export interface TemplateBootstrap {
+  postgres?: boolean;
+  extraEnv?: EnvEntry[];
+}
+
 export interface Template {
   slug: string;
   title: string;
@@ -10,6 +19,8 @@ export interface Template {
   repoUrl: string;
   branch: string;
   port: number;
+  /** Resources auto-provisioned before the app boots when the user clicks Deploy. */
+  bootstrap?: TemplateBootstrap;
 }
 
 export const templates: Template[] = catalog as Template[];
