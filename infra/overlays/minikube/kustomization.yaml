@@ -1,0 +1,13 @@
+# minikube with the ingress addon enabled.
+# Prereq:  minikube start  &&  minikube addons enable ingress
+# Reach the ingress from your host:  minikube tunnel
+# Default storage class is 'standard' (hostPath) — no patch needed.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: ingress-patch.yaml
+    target: { kind: Ingress, name: web }

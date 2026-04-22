@@ -1,0 +1,10 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: { name: web, namespace: app }
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: web.127.0.0.1.nip.io
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: web, port: { number: 80 } } } }

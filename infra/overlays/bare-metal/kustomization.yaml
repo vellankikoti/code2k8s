@@ -1,0 +1,17 @@
+# 3x $5 VPS bare-metal cluster (what the full guide covers).
+# Prereqs (from infra/scripts/):
+#   03-install-ingress-nginx.sh   — ingress-nginx with hostNetwork: true
+#   04-install-cert-manager.sh    — cert-manager + letsencrypt-prod ClusterIssuer
+# Storage: k3s's bundled local-path (default) — no patch.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: ingress-patch.yaml
+    target: { kind: Ingress, name: web }
+
+# EDIT: change this host to your wildcard-DNS-backed domain before apply.
+# Example:  kubectl apply -k infra/overlays/bare-metal/

@@ -1,0 +1,25 @@
+# Azure Kubernetes Service (AKS).
+# Prereqs:
+#   - ingress-nginx or AGIC (Application Gateway Ingress Controller).
+#     This overlay uses nginx; switch ingressClassName to 'azure-application-gateway' for AGIC.
+#   - cert-manager + ClusterIssuer 'letsencrypt-prod'
+#   - Azure Disk CSI driver (default on recent AKS) — 'managed-csi'.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: ingress-patch.yaml
+    target: { kind: Ingress, name: web }
+  - patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: managed-csi
+    target: { kind: StatefulSet, name: postgres }
+  - patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: managed-csi
+    target: { kind: StatefulSet, name: redis }

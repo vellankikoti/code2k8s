@@ -1,0 +1,13 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: app
+  # annotations are added by each overlay (ingress class, cert issuer, etc.)
+spec:
+  # ingressClassName intentionally omitted — each overlay patches this.
+  rules:
+    - host: REPLACE.example.com    # overlay patches this
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: web, port: { number: 80 } } } }

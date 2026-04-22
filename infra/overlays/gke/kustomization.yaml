@@ -1,0 +1,26 @@
+# Google Kubernetes Engine (GKE).
+# Prereqs:
+#   - Either ingress-nginx (cross-cloud portable) or the built-in GCE L7
+#     ingress (`ingressClassName: gce`). This overlay uses nginx.
+#   - cert-manager + ClusterIssuer 'letsencrypt-prod'
+#     (alt: Google-managed certs via networking.gke.io/managed-certificates)
+#   - PD CSI driver is default on GKE — storage class 'standard-rwo'.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: ingress-patch.yaml
+    target: { kind: Ingress, name: web }
+  - patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: standard-rwo
+    target: { kind: StatefulSet, name: postgres }
+  - patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: standard-rwo
+    target: { kind: StatefulSet, name: redis }

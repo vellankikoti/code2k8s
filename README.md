@@ -1,8 +1,10 @@
-# Deploy Next.js + Postgres + Redis to bare-metal Kubernetes for $15/month
+# Deploy Next.js + Postgres + Redis to Kubernetes — works on any cluster
 
-> A hands-on guide to standing up a real 3-node **k3s** cluster on cheap VPS hardware — with HTTPS, persistent storage, and zero-downtime deploys. Nothing invented; every component is a stock install of a public project.
+> A hands-on guide to standing up a real k8s stack — with HTTPS, persistent storage, and zero-downtime deploys. Nothing invented; every component is a stock install of a public project. Kustomize overlays ship for **killercoda, k3d, Docker Desktop, minikube, bare-metal VPS, EKS, GKE, AKS**.
 
-**Read the guide →** [`docs/bare-metal-k3s-guide.md`](docs/bare-metal-k3s-guide.md)
+- **Try it free in the browser** (no install, no card): [killercoda instructions →](docs/platforms.md#start-free-in-the-browser-killercoda)
+- **Run it on 3× $5 VPS**: [bare-metal walkthrough →](docs/bare-metal-k3s-guide.md)
+- **Any other cluster**: [platform overlay matrix →](docs/platforms.md)
 
 ---
 
@@ -45,7 +47,17 @@
 | Ingress | [ingress-nginx](https://kubernetes.github.io/ingress-nginx/) | Widest ecosystem support — every Helm chart assumes it. |
 | TLS | [cert-manager](https://cert-manager.io) + Let's Encrypt | Fire-and-forget HTTPS via HTTP-01. |
 
-## Quickstart
+## Quickstart on any cluster (Kustomize)
+
+```bash
+git clone https://github.com/vellankikoti/code2k8s && cd code2k8s
+kubectl apply -k infra/overlays/<platform>/
+# platforms:  killercoda · k3d · docker-desktop · minikube · bare-metal · eks · gke · aks
+```
+
+See [`docs/platforms.md`](docs/platforms.md) for the per-platform prereqs (ingress controller, cert-manager, storage class). The base manifests in `infra/base/` are cluster-neutral — only the overlays touch platform-specific fields.
+
+## Quickstart on bare-metal (3× $5 VPS)
 
 ```bash
 # 1. On node 1 (control plane)
@@ -73,12 +85,20 @@ See the [full guide](docs/bare-metal-k3s-guide.md) for the explanation behind ea
 ## Repo layout
 
 ```
-docs/bare-metal-k3s-guide.md    ← the walkthrough (start here)
-infra/scripts/                  ← 4 bootstrap scripts, one per layer
-infra/cluster/app-stack.yaml    ← complete Next.js + Postgres + Redis manifest
-infra/README.md                 ← "why this project, not that one" per layer
-backend/  frontend/  k8s/       ← a reference PaaS built on the same primitives
-                                  (optional — the guide doesn't require it)
+docs/
+├── bare-metal-k3s-guide.md    ← the in-depth VPS walkthrough
+└── platforms.md               ← per-platform overlay matrix + killercoda instructions
+
+infra/
+├── base/                      ← cluster-neutral manifests (Kustomize base)
+├── overlays/
+│   ├── killercoda/            ← run free in a browser
+│   ├── k3d/  docker-desktop/  minikube/
+│   ├── bare-metal/
+│   └── eks/  gke/  aks/
+└── scripts/                   ← bootstrap scripts for the bare-metal path
+
+examples/next-postgres-redis/  ← the demo app (built & published via GitHub Actions)
 ```
 
 ## FAQ

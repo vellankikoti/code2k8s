@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: app
+  annotations:
+    # Option A — use cert-manager + Let's Encrypt on an nginx ingress:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Option B — swap to ALB + ACM instead: comment the line above, uncomment these:
+    # alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/target-type: ip
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:111111111111:certificate/XXXX
+spec:
+  ingressClassName: nginx              # or 'alb' for Option B
+  rules:
+    - host: app.apps.example.com
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: web, port: { number: 80 } } } }
+  tls:
+    - hosts: [app.apps.example.com]
+      secretName: web-tls

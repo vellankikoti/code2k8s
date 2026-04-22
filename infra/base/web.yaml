@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: web, namespace: app }
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector: { matchLabels: { app: web } }
+  template:
+    metadata: { labels: { app: web } }
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: web
+          image: ghcr.io/vellankikoti/next-postgres-redis:latest
+          ports: [{ containerPort: 3000 }]
+          env:
+            - name: DATABASE_URL
+              value: postgres://app:CHANGE-ME-postgres-password@postgres.app.svc.cluster.local:5432/app
+            - name: REDIS_URL
+              value: redis://redis.app.svc.cluster.local:6379
+          readinessProbe:
+            httpGet: { path: /, port: 3000 }
+            periodSeconds: 2
+            failureThreshold: 15
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: 3000 }
+            periodSeconds: 20
+            initialDelaySeconds: 60
+          lifecycle:
+            preStop: { exec: { command: ["sh", "-c", "sleep 20"] } }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { cpu: 1000m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web, namespace: app }
+spec:
+  selector: { app: web }
+  ports: [{ port: 80, targetPort: 3000 }]
