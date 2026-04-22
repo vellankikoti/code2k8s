@@ -1,5 +1,8 @@
 # Code2K8s
 
+> **👉 Looking for the hands-on bare-metal k3s guide?** Start here: [`docs/bare-metal-k3s-guide.md`](docs/bare-metal-k3s-guide.md). A complete walkthrough for deploying Next.js + Postgres + Redis on three $5 VPS nodes with HTTPS, persistence, and zero-downtime deploys — using only public upstream projects (k3s, ingress-nginx, cert-manager, local-path).
+
+
 > **Your own Vercel — on your own Kubernetes.**
 > Paste a GitHub repo. Click Deploy. Get a live URL.
 > No YAML. No Helm. No lock-in. Just production-shaped Kubernetes, one click away.

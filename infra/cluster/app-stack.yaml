@@ -1,0 +1,145 @@
+# Complete Next.js + Postgres + Redis stack for a bare-metal k3s cluster.
+# Edit the three "CHANGE-ME" placeholders, then: kubectl apply -f app-stack.yaml
+#
+# Prereqs: k3s cluster running, ingress-nginx installed, cert-manager ClusterIssuer
+# 'letsencrypt-prod' exists, DNS for your hostname points at the cluster.
+
+apiVersion: v1
+kind: Namespace
+metadata: { name: app }
+---
+apiVersion: v1
+kind: Secret
+metadata: { name: postgres, namespace: app }
+stringData:
+  POSTGRES_USER: app
+  POSTGRES_PASSWORD: CHANGE-ME-postgres-password
+  POSTGRES_DB: app
+---
+apiVersion: v1
+kind: Service
+metadata: { name: postgres, namespace: app }
+spec:
+  clusterIP: None
+  selector: { app: postgres }
+  ports: [{ port: 5432, name: pg }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: postgres, namespace: app }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          envFrom: [{ secretRef: { name: postgres } }]
+          ports: [{ containerPort: 5432 }]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data, subPath: pgdata }
+          readinessProbe:
+            exec: { command: [pg_isready, -U, app, -d, app] }
+            periodSeconds: 3
+          livenessProbe:
+            exec: { command: [pg_isready, -U, app, -d, app] }
+            periodSeconds: 20
+            initialDelaySeconds: 30
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { cpu: 1000m, memory: 512Mi }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 10Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: redis, namespace: app }
+spec:
+  clusterIP: None
+  selector: { app: redis }
+  ports: [{ port: 6379, name: redis }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: redis, namespace: app }
+spec:
+  serviceName: redis
+  replicas: 1
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis } }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: [--save, "", --appendonly, "no"]
+          ports: [{ containerPort: 6379 }]
+          readinessProbe:
+            exec: { command: [redis-cli, ping] }
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 300m, memory: 256Mi }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 2Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: web, namespace: app }
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector: { matchLabels: { app: web } }
+  template:
+    metadata: { labels: { app: web } }
+    spec:
+      containers:
+        - name: web
+          image: CHANGE-ME/your-next-app:latest
+          ports: [{ containerPort: 3000 }]
+          env:
+            - name: DATABASE_URL
+              value: postgres://app:CHANGE-ME-postgres-password@postgres.app.svc.cluster.local:5432/app
+            - name: REDIS_URL
+              value: redis://redis.app.svc.cluster.local:6379
+          readinessProbe: { httpGet: { path: /, port: 3000 }, periodSeconds: 3, failureThreshold: 6 }
+          livenessProbe:  { httpGet: { path: /, port: 3000 }, periodSeconds: 20, initialDelaySeconds: 30 }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { cpu: 1000m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web, namespace: app }
+spec:
+  selector: { app: web }
+  ports: [{ port: 80, targetPort: 3000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: app
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: app.apps.example.com       # CHANGE-ME
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: web, port: { number: 80 } } } }
+  tls:
+    - hosts: [app.apps.example.com]    # CHANGE-ME
+      secretName: web-tls
