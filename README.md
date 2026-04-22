@@ -54,13 +54,18 @@
 ```bash
 git clone https://github.com/vellankikoti/code2k8s && cd code2k8s
 
-# One-liner: installs metrics-server (for the HPA demo) and applies the overlay.
-./scripts/playground-up.sh killercoda
+# Auto-detects cluster type from kubectl context + node labels, then asks
+# to confirm. Installs metrics-server and applies the matching overlay.
+./scripts/playground-up.sh            # auto-detect (interactive)
+./scripts/playground-up.sh -y         # auto-detect, no prompt
+./scripts/playground-up.sh killercoda # force a specific overlay
 # overlays: killercoda · k3d · docker-desktop · minikube · bare-metal · eks · gke · aks
 
 # ...or do it by hand:
 kubectl apply -k infra/overlays/<platform>/
 ```
+
+Detection uses `kubectl config current-context` (catches `docker-desktop`, `minikube`, `k3d-*`, `kind-*`) and node `providerID` / labels (EKS → `aws://`, GKE → `gce://`, AKS → `azure://`, k3s → `bare-metal` or `killercoda`). Unknown clusters fall through to a list-and-pick prompt.
 
 When the script finishes you'll see a **"What to do next"** block with the exact URL/port to open and the four demo scenarios to run. On killercoda that's the **`30080`** tab at the top of the terminal (add it via `+` → *Select port to view on Host 1* → `30080`). On k3d / minikube / Docker Desktop: `kubectl -n app port-forward svc/web 8080:80` and open `http://localhost:8080`.
 

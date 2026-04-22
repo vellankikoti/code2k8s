@@ -1,15 +1,93 @@
 #!/usr/bin/env bash
 # Bring up the Code2K8s live playground on a cluster.
-#   ./scripts/playground-up.sh <overlay>
-# <overlay> defaults to "killercoda". See infra/overlays/ for options.
+#   ./scripts/playground-up.sh [overlay] [-y|--yes]
+#
+# With no overlay arg, the script auto-detects the cluster type from
+# kubectl context + node labels and asks you to confirm. Pass -y to skip
+# the prompt, or pass an explicit overlay name to override detection.
+# See infra/overlays/ for the full list.
 #
 # Env overrides:
 #   TIMEOUT=300   # seconds to wait for each rollout (default 300)
 set -euo pipefail
 
-OVERLAY="${1:-killercoda}"
-TIMEOUT="${TIMEOUT:-300}"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+TIMEOUT="${TIMEOUT:-300}"
+ASSUME_YES=0
+OVERLAY=""
+
+for arg in "$@"; do
+  case "$arg" in
+    -y|--yes) ASSUME_YES=1 ;;
+    -h|--help)
+      sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+      echo; echo "Available overlays:"
+      ls "${REPO_ROOT}/infra/overlays/" | sed 's/^/  /'
+      exit 0
+      ;;
+    -*) echo "unknown flag: $arg" >&2; exit 2 ;;
+    *)  OVERLAY="$arg" ;;
+  esac
+done
+
+detect_overlay() {
+  local ctx nodes provider
+  ctx="$(kubectl config current-context 2>/dev/null || true)"
+  case "$ctx" in
+    docker-desktop)    echo docker-desktop; return ;;
+    minikube)          echo minikube; return ;;
+    k3d-*)             echo k3d; return ;;
+    kind-*)            echo k3d; return ;;  # kind isn't an overlay; k3d manifests are compatible
+  esac
+
+  # Look at node provider IDs for cloud clusters.
+  provider="$(kubectl get nodes -o jsonpath='{.items[0].spec.providerID}' 2>/dev/null || true)"
+  case "$provider" in
+    aws:///*)   echo eks; return ;;
+    gce://*)    echo gke; return ;;
+    azure:///*) echo aks; return ;;
+  esac
+
+  # Node labels — k3s (bare-metal / killercoda) vs other self-managed.
+  nodes="$(kubectl get nodes -o json 2>/dev/null || true)"
+  if echo "$nodes" | grep -q '"node.kubernetes.io/instance-type":[[:space:]]*"k3s"'; then
+    # killercoda's k3s playground has a recognizable hostname pattern.
+    if echo "$nodes" | grep -qE '"kubernetes.io/hostname":[[:space:]]*"(controlplane|node01|node-1)"'; then
+      echo killercoda; return
+    fi
+    echo bare-metal; return
+  fi
+
+  return 1
+}
+
+if [ -z "${OVERLAY}" ]; then
+  echo "==> Detecting cluster type..."
+  if detected="$(detect_overlay)"; then
+    ctx="$(kubectl config current-context 2>/dev/null || echo '?')"
+    echo "    context: ${ctx}"
+    echo "    overlay: ${detected}"
+    if [ "${ASSUME_YES}" -ne 1 ]; then
+      read -r -p "    Use this overlay? [Y/n] " ans
+      case "${ans:-Y}" in
+        [Nn]*)
+          echo "    Available:"
+          ls "${REPO_ROOT}/infra/overlays/" | sed 's/^/      /'
+          read -r -p "    Enter overlay name: " OVERLAY
+          ;;
+        *) OVERLAY="${detected}" ;;
+      esac
+    else
+      OVERLAY="${detected}"
+    fi
+  else
+    echo "    could not detect cluster type."
+    echo "    Available overlays:"
+    ls "${REPO_ROOT}/infra/overlays/" | sed 's/^/      /'
+    read -r -p "    Enter overlay name: " OVERLAY
+  fi
+fi
+
 OVERLAY_DIR="${REPO_ROOT}/infra/overlays/${OVERLAY}"
 
 if [ ! -d "${OVERLAY_DIR}" ]; then
