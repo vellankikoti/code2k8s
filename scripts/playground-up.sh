@@ -58,11 +58,18 @@ detect_overlay() {
     is_k3s=1
   fi
 
-  # Killercoda hostnames: `controlplane` + `node01..` (k8s playground) or
-  # `cplane-01` + `node-01..` (newer kubeadm playground). Match either.
-  if echo "$hostnames" | grep -qE '(^|[[:space:]])(controlplane|cplane-[0-9]+)([[:space:]]|$)' \
-     && echo "$hostnames" | grep -qE '(^|[[:space:]])node-?[0-9]+([[:space:]]|$)'; then
+  # Killercoda's own playground: `controlplane` + `node01..`. Real thing.
+  if echo "$hostnames" | grep -qE '(^|[[:space:]])controlplane([[:space:]]|$)' \
+     && echo "$hostnames" | grep -qE '(^|[[:space:]])node0[0-9]+([[:space:]]|$)'; then
     echo killercoda; return
+  fi
+
+  # Other kubeadm playgrounds (iximiuz labs etc): `cplane-NN` + `node-NN`.
+  # Same NodePort constraint as killercoda, different provider — use the
+  # generic `playground` overlay so the label doesn't lie.
+  if echo "$hostnames" | grep -qE '(^|[[:space:]])cplane-[0-9]+([[:space:]]|$)' \
+     && echo "$hostnames" | grep -qE '(^|[[:space:]])node-[0-9]+([[:space:]]|$)'; then
+    echo playground; return
   fi
 
   [ "$is_k3s" -eq 1 ] && { echo bare-metal; return; }
@@ -73,6 +80,27 @@ detect_overlay() {
   fi
 
   return 1
+}
+
+ensure_default_storage_class() {
+  # The playground stack needs PVCs; a cluster with no default StorageClass
+  # will leave postgres-0 / redis-0 Pending forever.
+  if kubectl get storageclass -o json 2>/dev/null \
+       | grep -q '"storageclass.kubernetes.io/is-default-class":[[:space:]]*"true"'; then
+    return 0
+  fi
+
+  echo "    no default StorageClass found — PVCs would hang."
+  echo "    Installing rancher/local-path-provisioner and marking it default."
+  if [ "${ASSUME_YES}" -ne 1 ]; then
+    read -r -p "    Proceed? [Y/n] " ans
+    case "${ans:-Y}" in [Nn]*) echo "    aborted."; exit 1 ;; esac
+  fi
+
+  kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+  kubectl -n local-path-storage rollout status deploy/local-path-provisioner --timeout=120s
+  kubectl patch storageclass local-path -p \
+    '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 }
 
 if [ -z "${OVERLAY}" ]; then
@@ -157,6 +185,9 @@ else
   echo "    metrics-server already present"
 fi
 
+echo "==> [2/4] Ensuring a default StorageClass (PVCs need one)"
+ensure_default_storage_class
+
 echo "==> [2/4] Applying overlay: ${OVERLAY}"
 kubectl apply -k "${OVERLAY_DIR}"
 
@@ -181,6 +212,14 @@ case "${OVERLAY}" in
   killercoda)
     URL_HINT="Open the '30080' tab at the top of the killercoda terminal.
     (If no tab appears: click the '+' → 'Select port to view on Host 1' → 30080.)"
+    ;;
+  playground)
+    node_ip="$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null)"
+    [ -z "$node_ip" ] && node_ip="$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null)"
+    URL_HINT="NodePort 30080 is exposed. Depending on the playground:
+      - If the UI has an 'Access port 30080' / 'Open port' button — click it.
+      - Otherwise: curl http://${node_ip:-<node-ip>}:30080
+      - Or port-forward: kubectl -n app port-forward svc/web 8080:80"
     ;;
   k3d|minikube|docker-desktop|bare-metal)
     URL_HINT="Port-forward, then open http://localhost:8080

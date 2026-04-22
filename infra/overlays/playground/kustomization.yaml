@@ -1,0 +1,27 @@
+# Generic self-managed playground / kubeadm lab (iximiuz-style labs,
+# home-lab k8s, anything without cloud LB + DNS). NodePort 30080, no Ingress —
+# same shape as the killercoda overlay, just honestly named for non-killercoda
+# playgrounds that have the same constraints.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30080
+    target: { kind: Service, name: web }
+  - patch: |-
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: web
+        namespace: app
+    target: { kind: Ingress, name: web }
